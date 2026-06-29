@@ -1,14 +1,17 @@
 {
   "stop": {
     "file": "sounds/yes-success.wav",
-    "volume": 100
+    "volume": 100,
+    "flash": true
   },
   "notification": {
     "file": "sounds/zaeblo-vse.wav",
-    "volume": 100
+    "volume": 100,
+    "flash": true
   },
   "question": {
     "file": "sounds/zaeblo-vse.wav",
-    "volume": 100
+    "volume": 100,
+    "flash": true
   }
 }
