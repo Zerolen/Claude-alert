@@ -69,14 +69,27 @@ kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
 kernel32.Process32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
 kernel32.Process32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 user32.EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
 user32.IsWindowVisible.argtypes = [wintypes.HWND]
 user32.IsWindowVisible.restype = wintypes.BOOL
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.FlashWindowEx.argtypes = [ctypes.POINTER(FLASHWINFO)]
 user32.FlashWindowEx.restype = wintypes.BOOL
+
+# --- подъём окна на передний план -----------------------------------------
+SW_RESTORE = 9
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+user32.AttachThreadInput.restype = wintypes.BOOL
+user32.BringWindowToTop.argtypes = [wintypes.HWND]
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.IsIconic.argtypes = [wintypes.HWND]
+user32.IsIconic.restype = wintypes.BOOL
 
 # Окна рабочего стола/панели задач — никогда не мигаем ими.
 _SHELL_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
@@ -114,8 +127,15 @@ def _ancestors(pid):
     return chain
 
 
+def _window_title(hwnd):
+    """Текст заголовка окна (пустая строка, если его нет)."""
+    buf = ctypes.create_unicode_buffer(512)
+    user32.GetWindowTextW(hwnd, buf, 512)
+    return buf.value
+
+
 def _windows_by_pid():
-    """{pid: [(hwnd, длина_заголовка), ...]} для видимых окон верхнего уровня."""
+    """{pid: [(hwnd, заголовок), ...]} для видимых окон верхнего уровня."""
     mapping = {}
 
     def cb(hwnd, _lparam):
@@ -125,8 +145,7 @@ def _windows_by_pid():
             cls = ctypes.create_unicode_buffer(256)
             user32.GetClassNameW(hwnd, cls, 256)
             if cls.value not in _SHELL_CLASSES:
-                title_len = user32.GetWindowTextLengthW(hwnd)
-                mapping.setdefault(pid.value, []).append((hwnd, title_len))
+                mapping.setdefault(pid.value, []).append((hwnd, _window_title(hwnd)))
         return True
 
     proc = WNDENUMPROC(cb)  # держим ссылку, пока идёт EnumWindows
@@ -134,15 +153,40 @@ def _windows_by_pid():
     return mapping
 
 
-def find_host_window(pid=None):
+def _workspace_hint():
+    """Имя рабочей папки проекта — его VSCode пишет в заголовок окна.
+
+    Один процесс VSCode владеет окнами всех открытых воркспейсов, поэтому
+    по заголовку приходится отличать «своё» окно от чужих. Claude Code
+    задаёт CLAUDE_PROJECT_DIR в хуках; иначе берём текущую папку.
+    """
+    base = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    return os.path.basename(os.path.normpath(base)) if base else ""
+
+
+def _pick_window(windows, hint):
+    """Из окон процесса выбрать самое подходящее.
+
+    Если в заголовке есть имя рабочей папки (hint) — берём такое окно
+    (это нужный воркспейс VSCode). Иначе — окно с самым длинным
+    заголовком: почти всегда это главное окно, а не вспомогательное.
+    """
+    if hint:
+        matches = [w for w in windows if hint.lower() in (w[1] or "").lower()]
+        if matches:
+            return max(matches, key=lambda t: len(t[1]))[0]
+    return max(windows, key=lambda t: len(t[1]))[0]
+
+
+def find_host_window(pid=None, hint=None):
     """HWND окна ближайшего предка, у которого есть видимое окно. Или None."""
     pid = pid or os.getpid()
+    if hint is None:
+        hint = _workspace_hint()
     wins = _windows_by_pid()
     for p in _ancestors(pid):
         if wins.get(p):
-            # из нескольких окон процесса берём с самым длинным заголовком —
-            # это почти всегда главное окно, а не вспомогательное.
-            return max(wins[p], key=lambda t: t[1])[0]
+            return _pick_window(wins[p], hint)
     return None
 
 
@@ -166,7 +210,47 @@ def flash_host_window():
     return True
 
 
+def raise_window(hwnd):
+    """Вытащить окно hwnd поверх остальных и сделать активным.
+
+    Windows не даёт фоновому процессу просто так перехватить фокус —
+    SetForegroundWindow срабатывает только у потока, владеющего активным
+    окном. Обходим это: на время «приклеиваемся» к потоку текущего
+    переднего окна (AttachThreadInput), и тогда система разрешает смену
+    фокуса. Свёрнутое окно сперва разворачиваем.
+    """
+    if not hwnd:
+        return False
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, SW_RESTORE)
+
+    fg = user32.GetForegroundWindow()
+    fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    our_thread = kernel32.GetCurrentThreadId()
+
+    attached = False
+    if fg_thread and fg_thread != our_thread:
+        attached = bool(user32.AttachThreadInput(our_thread, fg_thread, True))
+    try:
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(our_thread, fg_thread, False)
+    return True
+
+
+def raise_host_window():
+    """Найти своё окно-хост и поднять его наверх. True, если окно нашлось."""
+    hwnd = find_host_window()
+    if not hwnd:
+        return False
+    return raise_window(hwnd)
+
+
 if __name__ == "__main__":
-    if not flash_host_window():
-        print("Не нашёл окно-хост для мигания", file=sys.stderr)
+    bring_up = "--raise" in sys.argv[1:]
+    ok = raise_host_window() if bring_up else flash_host_window()
+    if not ok:
+        print("Не нашёл окно-хост", file=sys.stderr)
     sys.exit(0)

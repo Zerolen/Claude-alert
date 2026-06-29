@@ -2,21 +2,25 @@
   "stop": {
     "file": "sounds/yes-success.wav",
     "volume": 100,
-    "flash": true
+    "flash": true,
+    "raise": true
   },
   "notification": {
     "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
-    "flash": true
+    "flash": true,
+    "raise": true
   },
   "question": {
     "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
-    "flash": true
+    "flash": true,
+    "raise": true
   },
   "bash_command": {
     "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
-    "flash": true
+    "flash": true,
+    "raise": true
   }
 }

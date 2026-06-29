@@ -76,7 +76,8 @@ def load_event(event: str):
         return None
     return (entry.get("file"),
             int(entry.get("volume", 100)),
-            bool(entry.get("flash", True)))
+            bool(entry.get("flash", True)),
+            bool(entry.get("raise", False)))
 
 
 def flash_window():
@@ -86,6 +87,15 @@ def flash_window():
         flash_host_window()
     except Exception as exc:  # noqa: BLE001
         print(f"flash_window: {exc}", file=sys.stderr)
+
+
+def raise_window():
+    """Вытащить своё окно-хост поверх остальных. Ошибки не критичны."""
+    try:
+        from flash_window import raise_host_window
+        raise_host_window()
+    except Exception as exc:  # noqa: BLE001
+        print(f"raise_window: {exc}", file=sys.stderr)
 
 
 def main(argv=None) -> int:
@@ -109,28 +119,41 @@ def main(argv=None) -> int:
         "--no-flash", dest="flash", action="store_false",
         help="не мигать окном (перекрывает sounds.json)",
     )
+    parser.add_argument(
+        "--raise", dest="raise_", action="store_true", default=None,
+        help="вытащить окно-хост поверх остальных (перекрывает sounds.json)",
+    )
+    parser.add_argument(
+        "--no-raise", dest="raise_", action="store_false",
+        help="не поднимать окно наверх (перекрывает sounds.json)",
+    )
     args = parser.parse_args(argv)
 
     if args.event:
         loaded = load_event(args.event)
         if not loaded:
             return 1
-        file_path, vol, do_flash = loaded
+        file_path, vol, do_flash, do_raise = loaded
         if args.volume is not None:  # CLI перекрывает конфиг
             vol = args.volume
         if args.flash is not None:   # CLI перекрывает конфиг
             do_flash = args.flash
+        if args.raise_ is not None:  # CLI перекрывает конфиг
+            do_raise = args.raise_
     elif args.file:
         file_path = args.file
         vol = args.volume if args.volume is not None else 100
         do_flash = bool(args.flash)  # для прямого файла по умолчанию не мигаем
+        do_raise = bool(args.raise_)
     else:
         parser.error("укажите файл или --event")
         return 2
 
-    # Мигание запускаем до звука: ОС мигает сама и после выхода скрипта,
-    # а play() блокирует до конца проигрывания.
-    if do_flash:
+    # Мигание/подъём запускаем до звука: ОС реагирует сама и после выхода
+    # скрипта, а play() блокирует до конца проигрывания.
+    if do_raise:
+        raise_window()
+    elif do_flash:
         flash_window()
     return play(file_path, vol)
 
