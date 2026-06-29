@@ -11,13 +11,13 @@
     "flash": true,
     "raise": true
   },
-  "question": {
+  "permission": {
     "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
     "flash": true,
     "raise": true
   },
-  "bash_command": {
+  "question": {
     "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
     "flash": true,

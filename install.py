@@ -4,7 +4,7 @@
 Запускать на любой машине (обычно через install.bat). Скрипт сам:
   * находит папку текущего пользователя (~/.claude);
   * прописывает абсолютный путь к play_sound.py на ЭТОЙ машине;
-  * аккуратно вмёрживает хуки Stop, Notification и PreToolUse
+  * аккуратно вмёрживает хуки Stop, Notification, PermissionRequest и PreToolUse
     (на вопрос с вариантами ответа — AskUserQuestion), не трогая остальное;
   * делает резервную копию settings.json перед изменением.
 
@@ -19,15 +19,25 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLAYER = SCRIPT_DIR / "play_sound.py"
-# (событие Claude Code, аргумент --event, матчер инструмента или None)
+# (событие Claude Code, аргумент --event, матчер или None)
+# ВНИМАНИЕ: у разных событий matcher фильтрует РАЗНОЕ:
+#   PreToolUse / PermissionRequest — по имени инструмента (Bash, Edit|Write, …);
+#   Notification — по ТИПУ уведомления (permission_prompt, idle_prompt, …).
 EVENTS = [
     ("Stop", "stop", None),
-    ("Notification", "notification", None),
-    # Меню «выбери вариант» — это инструмент AskUserQuestion. Хук Notification на
-    # него НЕ срабатывает, поэтому ловим его через PreToolUse с матчером по имени.
+    # Notification сужаем до idle_prompt — это «Claude ждёт ввода» (простой ~60с).
+    # Запросы разрешения здесь НЕ ловим: для них есть отдельное надёжное событие
+    # PermissionRequest (ниже). Раньше всё висело на Notification без матчера, и
+    # на permission_prompt оно срабатывало непоследовательно (на Bash звук был,
+    # на Write — нет).
+    ("Notification", "notification", "idle_prompt"),
+    # Любой запрос разрешения (Write/Edit/Bash/MCP/…). Без матчера ловит все
+    # инструменты. Срабатывает ТОЛЬКО когда диалог реально показывается, поэтому
+    # на авто-одобренные вызовы не пищит (в отличие от PreToolUse).
+    ("PermissionRequest", "permission", None),
+    # Меню «выбери вариант» — это инструмент AskUserQuestion. Это не запрос
+    # разрешения, поэтому ловим его через PreToolUse с матчером по имени.
     ("PreToolUse", "question", "AskUserQuestion"),
-    # Разрешение на выполнение bash-команд — ловим через PreToolUse с матчером Bash.
-    ("PreToolUse", "bash_command", "Bash"),
 ]
 MARKER = "play_sound.py"  # как опознаём наши хуки при повторной установке
 

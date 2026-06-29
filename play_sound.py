@@ -15,6 +15,8 @@
 import argparse
 import ctypes
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -43,7 +45,8 @@ def play(file_path: str, volume: int = 100) -> int:
     volume = max(0, min(100, int(volume)))
     mci_volume = round(volume * 10)  # MCI: 0..1000
 
-    alias = "claude_alert_snd"
+    # Уникальный alias на процесс — чтобы параллельные звуки не конфликтовали.
+    alias = f"claude_alert_snd_{os.getpid()}"
     # type mpegvideo проигрывает и wav, и mp3, и поддерживает громкость
     err, _ = _mci(f'open "{path}" type mpegvideo alias {alias}')
     if err:
@@ -57,6 +60,49 @@ def play(file_path: str, volume: int = 100) -> int:
         _mci(f"play {alias} wait")
     finally:
         _mci(f"close {alias}")
+    return 0
+
+
+def play_detached(file_path: str, volume: int = 100) -> int:
+    """Запускает проигрывание в отдельном фоновом процессе и сразу возвращается.
+
+    Нужно для хуков PreToolUse (AskUserQuestion, Bash): они блокируют появление
+    меню/запроса до завершения хука. Раньше звук доигрывался целиком, и только
+    потом Claude задавал вопрос. Теперь звук играет параллельно.
+    """
+    # pythonw.exe — без мелькающего окна консоли (как и в install.py)
+    exe = Path(sys.executable)
+    pyw = exe.with_name("pythonw.exe")
+    launcher = str(pyw if pyw.exists() else exe)
+
+    # DETACHED_PROCESS + CREATE_NEW_PROCESS_GROUP — отвязать от консоли хука.
+    # CREATE_BREAKAWAY_FROM_JOB — ключевое для PreToolUse: Claude запускает такой
+    # хук в Job-объекте и убивает всё его дерево процессов, как только хук вернул
+    # управление (чтобы тут же показать меню/запрос). Без breakaway наш фоновый
+    # процесс умирает раньше, чем успеет издать звук. Для Stop этого не нужно,
+    # поэтому раньше звучал только он.
+    DETACHED_PROCESS = 0x00000008
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+    CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+    cmd = [launcher, str(Path(__file__).resolve()),
+           "--_play-now", file_path, "--volume", str(volume)]
+    base_flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    try:
+        subprocess.Popen(
+            cmd,
+            creationflags=base_flags | CREATE_BREAKAWAY_FROM_JOB,
+            close_fds=True,
+        )
+    except OSError:
+        # Job не разрешает breakaway — пробуем без него.
+        try:
+            subprocess.Popen(cmd, creationflags=base_flags, close_fds=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"play_detached: {exc}", file=sys.stderr)
+            return play(file_path, volume)  # лучше с задержкой, чем без звука
+    except Exception as exc:  # noqa: BLE001
+        print(f"play_detached: {exc}", file=sys.stderr)
+        return play(file_path, volume)
     return 0
 
 
@@ -127,7 +173,20 @@ def main(argv=None) -> int:
         "--no-raise", dest="raise_", action="store_false",
         help="не поднимать окно наверх (перекрывает sounds.json)",
     )
+    parser.add_argument(
+        "--_play-now", dest="play_now", action="store_true",
+        help=argparse.SUPPRESS,  # внутренний режим: синхронно играет в фоне-процессе
+    )
+    parser.add_argument(
+        "--sync", dest="sync", action="store_true",
+        help="играть синхронно (блокировать до конца), не в фоне",
+    )
     args = parser.parse_args(argv)
+
+    # Внутренний режим: нас запустил play_detached(), просто играем и выходим.
+    if args.play_now:
+        vol = args.volume if args.volume is not None else 100
+        return play(args.file, vol)
 
     if args.event:
         loaded = load_event(args.event)
@@ -149,13 +208,16 @@ def main(argv=None) -> int:
         parser.error("укажите файл или --event")
         return 2
 
-    # Мигание/подъём запускаем до звука: ОС реагирует сама и после выхода
-    # скрипта, а play() блокирует до конца проигрывания.
+    # Мигание/подъём запускаем до звука: ОС реагирует сама и после выхода скрипта.
     if do_raise:
         raise_window()
     elif do_flash:
         flash_window()
-    return play(file_path, vol)
+    # По умолчанию звук играет в фоне, чтобы хук не блокировал появление
+    # вопроса/запроса. --sync оставляет старое блокирующее поведение.
+    if args.sync:
+        return play(file_path, vol)
+    return play_detached(file_path, vol)
 
 
 if __name__ == "__main__":
