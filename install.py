@@ -26,6 +26,8 @@ EVENTS = [
     # Меню «выбери вариант» — это инструмент AskUserQuestion. Хук Notification на
     # него НЕ срабатывает, поэтому ловим его через PreToolUse с матчером по имени.
     ("PreToolUse", "question", "AskUserQuestion"),
+    # Разрешение на выполнение bash-команд — ловим через PreToolUse с матчером Bash.
+    ("PreToolUse", "bash_command", "Bash"),
 ]
 MARKER = "play_sound.py"  # как опознаём наши хуки при повторной установке
 

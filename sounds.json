@@ -13,5 +13,10 @@
     "file": "sounds/zaeblo-vse.wav",
     "volume": 100,
     "flash": true
+  },
+  "bash_command": {
+    "file": "sounds/zaeblo-vse.wav",
+    "volume": 100,
+    "flash": true
   }
 }

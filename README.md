@@ -24,7 +24,7 @@
 * находит папку `~/.claude` текущего пользователя;
 * прописывает абсолютный путь к `play_sound.py` на этой машине;
 * аккуратно вмёрживает хуки `Stop`, `Notification` и `PreToolUse`
-  (звук на меню `AskUserQuestion`) в `settings.json`, не трогая остальное;
+  (звук на меню `AskUserQuestion` и разрешение bash-команд) в `settings.json`, не трогая остальное;
 * делает резервную копию `settings.json` перед изменением.
 
 Повторный запуск безопасен — старые записи этой фичи заменяются новыми
@@ -49,6 +49,11 @@
     "flash": true
   },
   "question": {
+    "file": "sounds/zaeblo-sve.wav",
+    "volume": 100,
+    "flash": true
+  },
+  "bash_command": {
     "file": "sounds/zaeblo-vse.wav",
     "volume": 100,
     "flash": true
@@ -56,7 +61,8 @@
 }
 ```
 
-* `question` — звук на меню с вариантами ответа (инструмент `AskUserQuestion`).
+* `question` — звук на меню с вариантами ответа (инструмент `AskUserQuestion`);
+* `bash_command` — звук при запросе разрешения на выполнение bash-команды.
 
 * `file` — путь к `.wav` или `.mp3` (относительный путь считается от папки проекта);
 * `volume` — громкость в процентах `0..100`;
