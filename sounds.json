@@ -6,5 +6,9 @@
   "notification": {
     "file": "sounds/zaeblo-vse.wav",
     "volume": 100
+  },
+  "question": {
+    "file": "sounds/zaeblo-vse.wav",
+    "volume": 100
   }
 }

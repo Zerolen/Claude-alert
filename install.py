@@ -4,7 +4,8 @@
 Запускать на любой машине (обычно через install.bat). Скрипт сам:
   * находит папку текущего пользователя (~/.claude);
   * прописывает абсолютный путь к play_sound.py на ЭТОЙ машине;
-  * аккуратно вмёрживает хуки Stop и Notification, не трогая остальное;
+  * аккуратно вмёрживает хуки Stop, Notification и PreToolUse
+    (на вопрос с вариантами ответа — AskUserQuestion), не трогая остальное;
   * делает резервную копию settings.json перед изменением.
 
 Повторный запуск безопасен — старые записи этой фичи заменяются новыми
@@ -18,7 +19,14 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLAYER = SCRIPT_DIR / "play_sound.py"
-EVENTS = {"Stop": "stop", "Notification": "notification"}
+# (событие Claude Code, аргумент --event, матчер инструмента или None)
+EVENTS = [
+    ("Stop", "stop", None),
+    ("Notification", "notification", None),
+    # Меню «выбери вариант» — это инструмент AskUserQuestion. Хук Notification на
+    # него НЕ срабатывает, поэтому ловим его через PreToolUse с матчером по имени.
+    ("PreToolUse", "question", "AskUserQuestion"),
+]
 MARKER = "play_sound.py"  # как опознаём наши хуки при повторной установке
 
 
@@ -63,15 +71,18 @@ def main() -> int:
         print(f"Резервная копия: {backup}")
 
     hooks = settings.setdefault("hooks", {})
-    for event, arg in EVENTS.items():
+    for event, arg, matcher in EVENTS:
         groups = [g for g in hooks.get(event, []) if not is_ours(g)]  # убираем старое
-        groups.append({
+        group = {
             "hooks": [{
                 "type": "command",
                 "shell": "powershell",
                 "command": build_command(arg),
             }]
-        })
+        }
+        if matcher is not None:
+            group["matcher"] = matcher
+        groups.append(group)
         hooks[event] = groups
 
     settings_path.write_text(
