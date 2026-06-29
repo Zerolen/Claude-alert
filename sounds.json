@@ -1,0 +1,10 @@
+{
+  "stop": {
+    "file": "sounds/yes-success.wav",
+    "volume": 100
+  },
+  "notification": {
+    "file": "sounds/zaeblo-vse.wav",
+    "volume": 100
+  }
+}

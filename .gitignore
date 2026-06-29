@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Claude settings backups created by install.py
+settings.json.bak-*
+
+# OS
+Thumbs.db
+.DS_Store
