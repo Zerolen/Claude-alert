@@ -5,17 +5,17 @@
     "flash": true
   },
   "notification": {
-    "file": "sounds/zaeblo-vse.wav",
+    "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
     "flash": true
   },
   "question": {
-    "file": "sounds/zaeblo-vse.wav",
+    "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
     "flash": true
   },
   "bash_command": {
-    "file": "sounds/zaeblo-vse.wav",
+    "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
     "flash": true
   }
