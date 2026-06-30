@@ -6,6 +6,8 @@
   * прописывает абсолютный путь к play_sound.py на ЭТОЙ машине;
   * аккуратно вмёрживает хуки Stop, Notification, PermissionRequest и PreToolUse
     (на вопрос с вариантами ответа — AskUserQuestion), не трогая остальное;
+  * регистрирует URL-протокол claude-alert: (HKCU), чтобы клик по тосту
+    поднимал нужное окно;
   * делает резервную копию settings.json перед изменением.
 
 Повторный запуск безопасен — старые записи этой фичи заменяются новыми
@@ -54,6 +56,33 @@ def build_command(event_arg: str) -> str:
     return f'& "{launcher()}" "{PLAYER}" --event {event_arg}'
 
 
+def register_protocol() -> bool:
+    """Регистрирует URL-протокол claude-alert: для клика по тосту.
+
+    Клик по тосту открывает URI claude-alert:raise?hint=..., и Windows
+    запускает зарегистрированную здесь команду, передавая ей URI как %1.
+    Команда поднимает нужное окно (flash_window.py --activate-url). Ключи
+    пишем в HKCU — права администратора не нужны. Здесь это ПРЯМАЯ команда
+    для CreateProcess, без обёртки '& "..."' (её понимает только PowerShell).
+    """
+    import winreg
+    fw = SCRIPT_DIR / "flash_window.py"
+    command = f'"{launcher()}" "{fw}" --activate-url "%1"'
+    base = r"Software\Classes\claude-alert"
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as k:
+            winreg.SetValueEx(k, None, 0, winreg.REG_SZ, "URL:Claude Alert")
+            winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                              base + r"\shell\open\command") as k:
+            winreg.SetValueEx(k, None, 0, winreg.REG_SZ, command)
+        return True
+    except OSError as exc:
+        print(f"Не удалось зарегистрировать протокол claude-alert: {exc}",
+              file=sys.stderr)
+        return False
+
+
 def is_ours(group: dict) -> bool:
     return any(MARKER in h.get("command", "") for h in group.get("hooks", []))
 
@@ -100,6 +129,9 @@ def main() -> int:
     settings_path.write_text(
         json.dumps(settings, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8")
+
+    if register_protocol():
+        print("Протокол claude-alert: зарегистрирован (клик по тосту фокусирует окно).")
 
     print(f"Готово. Хуки записаны в {settings_path}")
     print(f"Интерпретатор: {launcher()}")

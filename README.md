@@ -11,6 +11,12 @@
 пока вы не переключитесь на это окно. Нужное окно находится по дереву процессов,
 так что при нескольких окнах VSCode мигнёт именно нужное.
 
+Ещё может всплывать **toast-уведомление** Windows с именем проекта — по клику оно
+поднимает наверх именно то окно, из которого пришёл сигнал (через кастомный
+URL-протокол `claude-alert:`, который регистрирует установщик). Это удобнее
+автоподъёма окна (`raise`), когда фокус красть не хочется: уведомление просто
+висит, а переключаетесь вы по клику, когда готовы.
+
 Работает на встроенном `winmm` (MCI) и стандартном WinAPI через `ctypes` —
 сторонние библиотеки не нужны, только Python 3.
 
@@ -42,22 +48,30 @@
   "stop": {
     "file": "sounds/yes-success.wav",
     "volume": 100,
-    "flash": true
+    "flash": true,
+    "raise": false,
+    "toast": true
   },
   "notification": {
     "file": "sounds/zaeblo-vse.wav",
     "volume": 100,
-    "flash": true
+    "flash": true,
+    "raise": false,
+    "toast": true
   },
   "permission": {
     "file": "sounds/zaeblo-vse.wav",
     "volume": 100,
-    "flash": true
+    "flash": true,
+    "raise": false,
+    "toast": true
   },
   "question": {
     "file": "sounds/zaeblo-sve.wav",
     "volume": 100,
-    "flash": true
+    "flash": true,
+    "raise": false,
+    "toast": true
   }
 }
 ```
@@ -68,8 +82,15 @@
 
 * `file` — путь к `.wav` или `.mp3` (относительный путь считается от папки проекта);
 * `volume` — громкость в процентах `0..100`;
-* `flash` — мигать ли окном в панели задач для этого события (по умолчанию `true`).
-  Поставьте `false`, если для какого-то события мигание не нужно.
+* `flash` — мигать ли окном в панели задач для этого события (по умолчанию `true`);
+* `raise` — выдёргивать ли окно сразу на передний план (по умолчанию `false`).
+  Перехватывает фокус, поэтому несовместимо по смыслу с `toast`;
+* `toast` — показывать ли всплывающее уведомление с именем проекта (по умолчанию
+  `false`). По клику поднимает нужное окно. Необязательные `toast_title` и
+  `toast_message` переопределяют текст уведомления.
+
+> `raise` и `toast` решают одну задачу разными способами: `raise` сам тащит окно
+> к вам (крадёт фокус), `toast` ждёт вашего клика. Включайте что-то одно.
 
 > Мигание не сработает, если нужное окно прямо сейчас активно (вы и так на него
 > смотрите) — это штатное поведение Windows. Мигнёт, когда окно в фоне.
@@ -77,9 +98,12 @@
 ## Проверка вручную
 
 ```bash
-python play_sound.py --event stop            # звук + мигание, как в хуке
+python play_sound.py --event stop            # звук + мигание + тост, как в хуке
 python play_sound.py --event stop --no-flash # только звук, без мигания
+python play_sound.py --event stop --no-toast # без тоста
 python flash_window.py                        # только мигнуть окном-хостом
+python flash_window.py --raise                # поднять окно-хост наверх
+python toast.py "Заголовок" "Текст" --launch "claude-alert:raise?hint=Claude-alert"
 python play_sound.py "C:\Windows\Media\chimes.wav" --volume 50
 python play_sound.py beep.mp3 -v 100
 ```
@@ -88,8 +112,9 @@ python play_sound.py beep.mp3 -v 100
 
 | Файл | Назначение |
 |------|------------|
-| `install.bat` / `install.py` | Установка хуков в `settings.json` |
-| `play_sound.py` | Проигрывание звука с регулировкой громкости (и запуск мигания) |
-| `flash_window.py` | Мигание кнопкой нужного окна в панели задач (`FlashWindowEx`) |
-| `sounds.json` | Какой звук, громкость и мигание для каждого события |
+| `install.bat` / `install.py` | Установка хуков в `settings.json` и протокола `claude-alert:` |
+| `play_sound.py` | Проигрывание звука с регулировкой громкости (и запуск мигания/тоста) |
+| `flash_window.py` | Мигание/подъём нужного окна, обработчик клика по тосту |
+| `toast.py` | Toast-уведомление Windows (WinRT через PowerShell) |
+| `sounds.json` | Какой звук, громкость, мигание, подъём и тост для каждого события |
 | `sounds/` | Сами звуковые файлы |

@@ -1,26 +1,23 @@
 {
   "stop": {
-    "file": "sounds/yes-success.wav",
+    "file": "sounds/LevelUp.mp3",
     "volume": 100,
     "flash": true,
-    "raise": true
-  },
-  "notification": {
-    "file": "sounds/i-need-more-bullets.mp3",
-    "volume": 100,
-    "flash": true,
-    "raise": true
+    "raise": false,
+    "toast": true
   },
   "permission": {
     "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
     "flash": true,
-    "raise": true
+    "raise": false,
+    "toast": true
   },
   "question": {
     "file": "sounds/i-need-more-bullets.mp3",
     "volume": 100,
     "flash": true,
-    "raise": true
+    "raise": false,
+    "toast": true
   }
 }

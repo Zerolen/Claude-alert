@@ -190,6 +190,50 @@ def find_host_window(pid=None, hint=None):
     return None
 
 
+def find_window_by_hint(hint):
+    """HWND видимого окна, в заголовке которого встречается hint. Или None.
+
+    В отличие от find_host_window, не опирается на дерево процессов — нужно для
+    обработчика клика по тосту, который Windows запускает отдельным процессом
+    (потомок проводника), уже не связанным с нашим окном. Из подходящих окон
+    берём с самым длинным заголовком (обычно это главное окно воркспейса).
+    """
+    if not hint:
+        return None
+    hint_l = hint.lower()
+    candidates = []
+    for wins in _windows_by_pid().values():
+        for hwnd, title in wins:
+            if title and hint_l in title.lower():
+                candidates.append((hwnd, title))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda t: len(t[1]))[0]
+
+
+def activate_from_url(url):
+    """Обработчик протокола claude-alert: — поднять окно по hint из URL.
+
+    URL вида  claude-alert:raise?hint=<имя_проекта>. Если по hint окно не нашли,
+    пробуем обычный поиск по дереву процессов как запасной вариант.
+    """
+    from urllib.parse import parse_qs, unquote
+    hint = ""
+    try:
+        rest = url.split(":", 1)[1] if ":" in url else url
+        query = rest.split("?", 1)[1] if "?" in rest else ""
+        values = parse_qs(query).get("hint", [])
+        hint = unquote(values[0]) if values else ""
+    except Exception:  # noqa: BLE001
+        hint = ""
+    hwnd = find_window_by_hint(hint) if hint else None
+    if not hwnd:
+        hwnd = find_host_window()
+    if not hwnd:
+        return False
+    return raise_window(hwnd)
+
+
 def flash(hwnd, count=0, flags=FLASHW_TRAY | FLASHW_TIMERNOFG):
     """Мигнуть окном hwnd. count=0 + TIMERNOFG = пока не переключатся на окно."""
     info = FLASHWINFO()
@@ -249,7 +293,18 @@ def raise_host_window():
 
 
 if __name__ == "__main__":
-    bring_up = "--raise" in sys.argv[1:]
+    args = sys.argv[1:]
+    # --activate-url <URI> — вызывается из обработчика протокола claude-alert:
+    if "--activate-url" in args:
+        i = args.index("--activate-url")
+        url = args[i + 1] if i + 1 < len(args) else ""
+        try:
+            activate_from_url(url)
+        except Exception as exc:  # noqa: BLE001
+            print(f"activate: {exc}", file=sys.stderr)
+        sys.exit(0)
+
+    bring_up = "--raise" in args
     ok = raise_host_window() if bring_up else flash_host_window()
     if not ok:
         print("Не нашёл окно-хост", file=sys.stderr)

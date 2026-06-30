@@ -107,7 +107,7 @@ def play_detached(file_path: str, volume: int = 100) -> int:
 
 
 def load_event(event: str):
-    """Возвращает (file, volume, flash) для события из sounds.json."""
+    """Возвращает настройки события из sounds.json словарём (или None)."""
     if not CONFIG_PATH.exists():
         print(f"Нет файла конфигурации: {CONFIG_PATH}", file=sys.stderr)
         return None
@@ -120,10 +120,15 @@ def load_event(event: str):
     if not entry:
         print(f"Событие '{event}' не описано в {CONFIG_PATH}", file=sys.stderr)
         return None
-    return (entry.get("file"),
-            int(entry.get("volume", 100)),
-            bool(entry.get("flash", True)),
-            bool(entry.get("raise", False)))
+    return {
+        "file": entry.get("file"),
+        "volume": int(entry.get("volume", 100)),
+        "flash": bool(entry.get("flash", True)),
+        "raise": bool(entry.get("raise", False)),
+        "toast": bool(entry.get("toast", False)),
+        "toast_title": entry.get("toast_title"),
+        "toast_message": entry.get("toast_message"),
+    }
 
 
 def flash_window():
@@ -142,6 +147,29 @@ def raise_window():
         raise_host_window()
     except Exception as exc:  # noqa: BLE001
         print(f"raise_window: {exc}", file=sys.stderr)
+
+
+def toast_window(title=None, message=None):
+    """Показать тост с именем проекта; по клику он поднимет нужное окно.
+
+    Имя проекта берём из CLAUDE_PROJECT_DIR/cwd (как и для выбора окна-хоста)
+    и кладём в URI claude-alert:raise?hint=..., чтобы клик нашёл то же окно.
+    Ошибки не критичны — тост вспомогательный.
+    """
+    try:
+        from urllib.parse import quote
+        import toast
+        from flash_window import _workspace_hint
+        hint = _workspace_hint()
+        if title is None:
+            title = "Claude Code"
+        if message is None:
+            message = (f"Требуется внимание — проект «{hint}»" if hint
+                       else "Требуется внимание")
+        launch = f"claude-alert:raise?hint={quote(hint)}" if hint else None
+        toast.show(title, message, launch)
+    except Exception as exc:  # noqa: BLE001
+        print(f"toast_window: {exc}", file=sys.stderr)
 
 
 def main(argv=None) -> int:
@@ -174,6 +202,14 @@ def main(argv=None) -> int:
         help="не поднимать окно наверх (перекрывает sounds.json)",
     )
     parser.add_argument(
+        "--toast", dest="toast", action="store_true", default=None,
+        help="показать toast-уведомление (перекрывает sounds.json)",
+    )
+    parser.add_argument(
+        "--no-toast", dest="toast", action="store_false",
+        help="не показывать toast (перекрывает sounds.json)",
+    )
+    parser.add_argument(
         "--_play-now", dest="play_now", action="store_true",
         help=argparse.SUPPRESS,  # внутренний режим: синхронно играет в фоне-процессе
     )
@@ -188,27 +224,39 @@ def main(argv=None) -> int:
         vol = args.volume if args.volume is not None else 100
         return play(args.file, vol)
 
+    t_title = t_message = None
     if args.event:
         loaded = load_event(args.event)
         if not loaded:
             return 1
-        file_path, vol, do_flash, do_raise = loaded
+        file_path = loaded["file"]
+        vol = loaded["volume"]
+        do_flash = loaded["flash"]
+        do_raise = loaded["raise"]
+        do_toast = loaded["toast"]
+        t_title = loaded["toast_title"]
+        t_message = loaded["toast_message"]
         if args.volume is not None:  # CLI перекрывает конфиг
             vol = args.volume
         if args.flash is not None:   # CLI перекрывает конфиг
             do_flash = args.flash
         if args.raise_ is not None:  # CLI перекрывает конфиг
             do_raise = args.raise_
+        if args.toast is not None:   # CLI перекрывает конфиг
+            do_toast = args.toast
     elif args.file:
         file_path = args.file
         vol = args.volume if args.volume is not None else 100
         do_flash = bool(args.flash)  # для прямого файла по умолчанию не мигаем
         do_raise = bool(args.raise_)
+        do_toast = bool(args.toast)
     else:
         parser.error("укажите файл или --event")
         return 2
 
-    # Мигание/подъём запускаем до звука: ОС реагирует сама и после выхода скрипта.
+    # Тост/мигание/подъём запускаем до звука: ОС реагирует сама и после выхода.
+    if do_toast:
+        toast_window(t_title, t_message)
     if do_raise:
         raise_window()
     elif do_flash:

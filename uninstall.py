@@ -5,6 +5,7 @@
   * находит папку текущего пользователя (~/.claude);
   * удаляет ТОЛЬКО наши группы хуков (опознаём по play_sound.py),
     не трогая остальные хуки и настройки;
+  * снимает регистрацию URL-протокола claude-alert: из реестра (HKCU);
   * убирает опустевшие массивы событий и пустой раздел "hooks";
   * делает резервную копию settings.json перед изменением.
 
@@ -23,7 +24,33 @@ def is_ours(group: dict) -> bool:
     return any(MARKER in h.get("command", "") for h in group.get("hooks", []))
 
 
+def unregister_protocol() -> bool:
+    """Удаляет ключи URL-протокола claude-alert: из HKCU. Безопасно при отсутствии."""
+    import winreg
+    # DeleteKey не удаляет ключ с подключами — идём от самого глубокого к корню.
+    subkeys = [
+        r"Software\Classes\claude-alert\shell\open\command",
+        r"Software\Classes\claude-alert\shell\open",
+        r"Software\Classes\claude-alert\shell",
+        r"Software\Classes\claude-alert",
+    ]
+    removed = False
+    for sub in subkeys:
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, sub)
+            removed = True
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            print(f"Не удалось удалить ключ {sub}: {exc}", file=sys.stderr)
+    return removed
+
+
 def main() -> int:
+    # Протокол снимаем всегда, независимо от состояния settings.json.
+    if unregister_protocol():
+        print("Протокол claude-alert: удалён из реестра.")
+
     claude_dir = Path.home() / ".claude"
     settings_path = claude_dir / "settings.json"
 
