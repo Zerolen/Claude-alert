@@ -18,10 +18,70 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = SCRIPT_DIR / "sounds.json"
+LOGS_DIR = SCRIPT_DIR / "logs"
+
+
+def _ensure_logs_dir():
+    """Создаёт папку логов, если её нет."""
+    LOGS_DIR.mkdir(exist_ok=True)
+
+
+def _log_sound(event: str = None, file_path: str = None, volume: int = 100,
+               actions: dict = None, context: dict = None, skipped: bool = False,
+               skip_reason: str = None, error: str = None):
+    """Логирует воспроизведение (или попытку) звука в JSON файл.
+
+    Args:
+        event: имя события из sounds.json (если применимо)
+        file_path: путь к файлу звука
+        volume: громкость (0..100)
+        actions: словарь с выполненными действиями {flash, raise, toast}
+        context: контекстная информация (проект, процесс и т.д.)
+        skipped: был ли звук пропущен
+        skip_reason: причина пропуска (если applicable)
+        error: сообщение об ошибке (если была)
+    """
+    try:
+        _ensure_logs_dir()
+
+        timestamp = datetime.now().isoformat()
+
+        if actions is None:
+            actions = {}
+        if context is None:
+            context = {}
+
+        log_entry = {
+            "timestamp": timestamp,
+            "event": event,
+            "file": file_path,
+            "volume": volume,
+            "skipped": skipped,
+            "skip_reason": skip_reason,
+            "actions": actions,
+            "context": {
+                "project": os.environ.get("CLAUDE_PROJECT_DIR", ""),
+                "cwd": os.environ.get("CLAUDE_CWD", ""),
+                "workspace": os.environ.get("WORKSPACE", ""),
+                **context,
+            },
+            "error": error,
+        }
+
+        # Ежедневный лог в формате YYYY-MM-DD.jsonl
+        log_date = datetime.now().strftime("%Y-%m-%d")
+        log_file = LOGS_DIR / f"{log_date}.jsonl"
+
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    except Exception as exc:  # noqa: BLE001
+        # Ошибки логирования не должны прерывать воспроизведение
+        print(f"Ошибка при логировании звука: {exc}", file=sys.stderr)
 
 
 def _mci(command: str):
@@ -39,7 +99,9 @@ def play(file_path: str, volume: int = 100) -> int:
     if not path.is_absolute():
         path = (SCRIPT_DIR / path).resolve()
     if not path.exists():
+        error_msg = f"File not found: {path}"
         print(f"Файл не найден: {path}", file=sys.stderr)
+        _log_sound(file_path=str(path), volume=volume, error=error_msg)
         return 1
 
     volume = max(0, min(100, int(volume)))
@@ -53,7 +115,9 @@ def play(file_path: str, volume: int = 100) -> int:
         # запасной вариант: дать MCI определить устройство по расширению
         err, _ = _mci(f'open "{path}" alias {alias}')
         if err:
+            error_msg = f"MCI error {err}"
             print(f"Не удалось открыть файл (MCI ошибка {err})", file=sys.stderr)
+            _log_sound(file_path=str(path), volume=volume, error=error_msg)
             return 1
     try:
         _mci(f"setaudio {alias} volume to {mci_volume}")
@@ -238,6 +302,11 @@ def main(argv=None) -> int:
     if args.event:
         loaded = load_event(args.event)
         if not loaded:
+            _log_sound(
+                event=args.event,
+                volume=args.volume or 100,
+                error=f"Event '{args.event}' not found in config",
+            )
             return 1
         file_path = loaded["file"]
         vol = loaded["volume"]
@@ -267,20 +336,42 @@ def main(argv=None) -> int:
     # Если нужное окно уже в фокусе — пользователь и так смотрит на него,
     # ничего не делаем: ни звука, ни мигания, ни тоста.
     if host_window_focused():
+        _log_sound(
+            event=args.event,
+            file_path=file_path,
+            volume=vol,
+            skipped=True,
+            skip_reason="Host window is already focused",
+        )
         return 0
 
     # Тост/мигание/подъём запускаем до звука: ОС реагирует сама и после выхода.
+    actions = {}
     if do_toast:
         toast_window(t_title, t_message)
+        actions["toast"] = True
     if do_raise:
         raise_window()
+        actions["raise"] = True
     elif do_flash:
         flash_window()
+        actions["flash"] = True
+
     # По умолчанию звук играет в фоне, чтобы хук не блокировал появление
     # вопроса/запроса. --sync оставляет старое блокирующее поведение.
     if args.sync:
-        return play(file_path, vol)
-    return play_detached(file_path, vol)
+        result = play(file_path, vol)
+    else:
+        result = play_detached(file_path, vol)
+
+    _log_sound(
+        event=args.event,
+        file_path=file_path,
+        volume=vol,
+        actions=actions,
+        context={"sync": args.sync, "detached": not args.sync},
+    )
+    return result
 
 
 if __name__ == "__main__":

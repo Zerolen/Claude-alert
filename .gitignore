@@ -8,6 +8,9 @@ venv/
 # Claude settings backups created by install.py
 settings.json.bak-*
 
+# Sound playback logs
+logs/
+
 # OS
 Thumbs.db
 .DS_Store
