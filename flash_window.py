@@ -292,6 +292,19 @@ def raise_host_window():
     return raise_window(hwnd)
 
 
+def is_host_window_foreground():
+    """True, если окно-хост сейчас на переднем плане (в фокусе).
+
+    Нужно, чтобы не дёргать пользователя звуком/миганием/тостом, когда он и так
+    смотрит именно на это окно. Если своё окно не нашли — считаем, что оно не
+    в фокусе (лучше лишний раз уведомить, чем промолчать).
+    """
+    hwnd = find_host_window()
+    if not hwnd:
+        return False
+    return user32.GetForegroundWindow() == hwnd
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     # --activate-url <URI> — вызывается из обработчика протокола claude-alert:

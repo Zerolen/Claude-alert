@@ -131,6 +131,16 @@ def load_event(event: str):
     }
 
 
+def host_window_focused():
+    """True, если своё окно-хост сейчас в фокусе. Ошибки трактуем как «нет»."""
+    try:
+        from flash_window import is_host_window_foreground
+        return is_host_window_foreground()
+    except Exception as exc:  # noqa: BLE001
+        print(f"host_window_focused: {exc}", file=sys.stderr)
+        return False
+
+
 def flash_window():
     """Мигнуть кнопкой своего окна-хоста в панели задач. Ошибки не критичны."""
     try:
@@ -253,6 +263,11 @@ def main(argv=None) -> int:
     else:
         parser.error("укажите файл или --event")
         return 2
+
+    # Если нужное окно уже в фокусе — пользователь и так смотрит на него,
+    # ничего не делаем: ни звука, ни мигания, ни тоста.
+    if host_window_focused():
+        return 0
 
     # Тост/мигание/подъём запускаем до звука: ОС реагирует сама и после выхода.
     if do_toast:
