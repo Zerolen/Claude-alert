@@ -7,14 +7,14 @@
     "toast": true
   },
   "permission": {
-    "file": "sounds/i-need-more-bullets.mp3",
+    "file": "sounds/mMurlocAggroOld.mp3",
     "volume": 100,
     "flash": true,
     "raise": false,
     "toast": true
   },
   "question": {
-    "file": "sounds/i-need-more-bullets.mp3",
+    "file": "sounds/mMurlocAggroOld.mp3",
     "volume": 100,
     "flash": true,
     "raise": false,
